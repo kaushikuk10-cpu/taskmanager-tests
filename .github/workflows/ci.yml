@@ -1,0 +1,55 @@
+name: API Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start Spring Boot API
+        run: |
+          sudo apt-get install -y openjdk-17-jdk
+          cd ../
+          git clone https://github.com/kaushikuk10-cpu/taskmanager.git
+          cd taskmanager
+          ./mvnw spring-boot:run &
+          sleep 30
+
+      - name: Wait for API to be ready
+        run: |
+          for i in {1..10}; do
+            curl -s http://localhost:8080/api/auth/register \
+              -H "Content-Type: application/json" \
+              -d '{"username":"healthcheck","password":"check123"}' && break
+            echo "Waiting for API..."
+            sleep 5
+          done
+
+      - name: Run tests with Allure
+        run: pytest tests/ --alluredir=allure-results -v
+        env:
+          BASE_URL: http://localhost:8080
+
+      - name: Upload Allure results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: allure-results
+          path: allure-results/
+          retention-days: 7
