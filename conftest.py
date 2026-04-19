@@ -18,16 +18,19 @@ def auth_client():
     client = ApiClient()
     user = generate_user()
 
+    # Register returns plain text "User registered successfully!"
     reg_response = client.post("/api/auth/register", user)
     assert reg_response.status_code == 200, \
         f"Registration failed: {reg_response.text}"
 
+    # Login returns raw JWT token string directly
     login_response = client.post("/api/auth/login", user)
     assert login_response.status_code == 200, \
         f"Login failed: {login_response.text}"
 
-    token = login_response.json().get("token")
-    assert token is not None, "No token returned from login"
+    # Token is the raw response text, not JSON
+    token = login_response.text.strip()
+    assert token is not None and len(token) > 0, "No token returned from login"
 
     client.set_token(token)
     return client
