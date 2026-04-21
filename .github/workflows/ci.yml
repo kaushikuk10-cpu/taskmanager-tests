@@ -11,16 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout test repo
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -28,29 +20,48 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Clone and start Spring Boot API
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Clone Spring Boot app
+        run: git clone https://github.com/kaushikuk10-cpu/taskmanager.git /home/runner/taskmanager
+
+      - name: Start Spring Boot app in background
+        working-directory: /home/runner/taskmanager
         run: |
-          git clone https://github.com/kaushikuk10-cpu/taskmanager.git
-          cd taskmanager
           chmod +x mvnw
-          ./mvnw spring-boot:run &
+          nohup ./mvnw spring-boot:run > /tmp/springboot.log 2>&1 &
+          echo "Spring Boot launching in background..."
 
-      - name: Wait for Spring Boot to be ready
+      - name: Wait for API to be ready
         run: |
-          echo "Waiting for API to start..."
-          for i in {1..24}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://localhost:8080/api/auth/register \
+          echo "Giving Maven time to download dependencies..."
+          sleep 60
+          echo "Now polling API..."
+          for i in {1..20}; do
+            echo "Attempt $i..."
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 5 \
+              -X POST http://localhost:8080/api/auth/register \
               -H "Content-Type: application/json" \
-              -d '{"username":"healthcheck'$i'","password":"check123"}')
-            echo "Attempt $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "400" ] || [ "$STATUS" = "403" ]; then
-              echo "API is ready!"
-              break
+              -d "{\"username\":\"ci_health_$i\",\"password\":\"pass123\"}" || echo "000")
+            echo "HTTP: $HTTP"
+            if [[ "$HTTP" == "200" || "$HTTP" == "400" || "$HTTP" == "403" ]]; then
+              echo "API is up!"
+              exit 0
             fi
-            sleep 5
+            sleep 10
           done
+          echo "=== Spring Boot logs ==="
+          cat /tmp/springboot.log
+          exit 1
 
-      - name: Run tests
+      - name: Run pytest
         run: pytest tests/ --alluredir=allure-results -v
         env:
           BASE_URL: http://localhost:8080
